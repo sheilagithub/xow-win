@@ -1,0 +1,19 @@
+# Build output
+build/
+*.o
+*.d
+
+# Microsoft's dongle firmware is proprietary: not redistributed here.
+# tools/Get-Firmware.ps1 fetches it from the driver store or Microsoft.
+firmware/*.bin
+dist/app/FW_ACC_00U.bin
+
+# Built binaries and third-party installers (see README for where to get them)
+dist/app/xow-win.exe
+dist/ViGEmBus_Setup_x64.exe
+dist/zadig.exe
+*.zip
+
+# Runtime files
+*.log
+xow-win.ini
