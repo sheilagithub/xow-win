@@ -32,6 +32,7 @@ if ($store) {
     Write-Host "Extracted from Microsoft's package (sha256 should be 48084d9f...)"
 }
 
-$hash = (Get-FileHash $target -Algorithm SHA256).Hash.ToLower()
+$sha = [System.Security.Cryptography.SHA256]::Create()
+$hash = ([BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes($target))) -replace '-', '').ToLower()
 Write-Host "$target  sha256=$hash  ($((Get-Item $target).Length) bytes)"
 Write-Host "Copy it next to xow-win.exe (build\ or dist\app\)."

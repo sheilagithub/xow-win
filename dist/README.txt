@@ -12,6 +12,9 @@ INSTALL (one admin prompt, otherwise silent)
   3. Double-click Install-Xbox-Wireless-Driver.cmd and approve the prompt.
 
   What it does:
+   - obtains the dongle firmware (FW_ACC_00U.bin, Microsoft's, not included):
+     from this PC's driver store if Microsoft's adapter driver was ever
+     installed, otherwise by downloading Microsoft's driver package
    - trusts and installs the WinUSB driver package for the adapter (the same one
      Zadig generates) and force-binds the adapter to it
    - installs ViGEmBus 1.22 silently (virtual controller driver, signed)

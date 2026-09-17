@@ -78,6 +78,39 @@ if ($vigem) {
 # --- 4. Copy the driver ------------------------------------------------------
 New-Item -ItemType Directory -Force $InstallDir | Out-Null
 Copy-Item (Join-Path $src 'app\*') $InstallDir -Force
+
+# The dongle firmware (FW_ACC_00U.bin) is Microsoft's and is not shipped in the
+# public package. Take it from this PC's driver store (Microsoft's adapter
+# driver, if it was ever installed) or download Microsoft's driver package.
+$fw = Join-Path $InstallDir 'FW_ACC_00U.bin'
+if (-not (Test-Path $fw)) {
+    $store = Get-ChildItem "$env:SystemRoot\System32\DriverStore\FileRepository" -Directory -Filter 'mt7612us*.inf_*' -ErrorAction SilentlyContinue |
+        ForEach-Object { Get-ChildItem $_.FullName -Filter 'FW_ACC_00U.bin' -ErrorAction SilentlyContinue } | Select-Object -First 1
+    if ($store) {
+        Copy-Item $store.FullName $fw -Force
+        L "Firmware: copied from driver store ($($store.Directory.Name))"
+    } else {
+        try {
+            $url = 'http://download.windowsupdate.com/c/msdownload/update/driver/drvs/2017/07/1cd6a87c-623f-4407-a52d-c31be49e925c_e19f60808bdcbfbd3c3df6be3e71ffc52e43261e.cab'
+            $cab = Join-Path $env:TEMP 'xbox-acc-driver.cab'
+            $tmp = Join-Path $env:TEMP 'xbox-acc-driver'
+            L "Firmware: downloading Microsoft's driver package..."
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -Uri $url -OutFile $cab -UseBasicParsing
+            New-Item -ItemType Directory -Force $tmp | Out-Null
+            & "$env:SystemRoot\System32\expand.exe" $cab -F:FW_ACC_00U.bin $tmp | Out-Null
+            Copy-Item (Join-Path $tmp 'FW_ACC_00U.bin') $fw -Force
+            L "Firmware: extracted from Microsoft's package"
+        } catch {
+            L "ERROR: could not obtain FW_ACC_00U.bin ($($_.Exception.Message)). Run tools\Get-Firmware.ps1 and copy it to $InstallDir"
+        }
+    }
+}
+if (Test-Path $fw) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $hash = ([BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes($fw))) -replace '-', '').ToLower()
+    L ("Firmware sha256: " + $hash.Substring(0, 16) + "... (" + (Get-Item $fw).Length + " bytes)")
+}
 # The WinUSB package travels with the driver so it can rebind itself if
 # Windows Update ever restores Microsoft's driver
 New-Item -ItemType Directory -Force (Join-Path $InstallDir 'winusb-driver') | Out-Null
