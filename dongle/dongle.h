@@ -24,6 +24,8 @@
 #include <cstdint>
 #include <array>
 #include <atomic>
+#include <chrono>
+#include <functional>
 #include <thread>
 #include <mutex>
 
@@ -49,7 +51,15 @@ public:
 
     using Mt76::setPairingStatus;
 
+    // Called when a controller drops within a few seconds of connecting:
+    // a sign the radio is not transmitting properly (seen after warm reboots)
+    using LinkFlap = std::function<void()>;
+
+    void setLinkFlapHandler(LinkFlap handler) { linkFlap = handler; }
+
 private:
+    LinkFlap linkFlap;
+    std::array<std::chrono::steady_clock::time_point, MT_WCID_COUNT> connectTimes = {};
     /* Packet handling */
     void handleControllerConnect(Bytes address);
     void handleControllerDisconnect(uint8_t wcid);

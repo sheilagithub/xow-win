@@ -1434,7 +1434,10 @@ bool Mt76::loadFirmware()
 
     if (controlRead(MT_FCE_DMA_ADDR, MT_VEND_READ_CFG))
     {
-        Log::debug("Firmware already loaded, resetting...");
+        // Happens after a warm reboot or a driver restart: the dongle kept
+        // power and the previous firmware is still running
+        Log::info("Firmware already running in the dongle, resetting it...");
+        firmwareWasRunning = true;
 
         uint32_t patch = controlRead(MT_RF_PATCH, MT_VEND_READ_CFG);
 

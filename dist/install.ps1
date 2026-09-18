@@ -152,6 +152,15 @@ L "Login task '$TaskName' registered for $userName (elevated, self-healing on)"
 
 @"
 @echo off
+REM Asks the running driver to reset the Xbox Wireless Adapter (USB port cycle,
+REM the software equivalent of unplugging it). Use when the controller will not
+REM connect. No admin prompt: the driver itself runs elevated.
+powershell -NoProfile -Command "try { `$e=[System.Threading.EventWaitHandle]::OpenExisting('Local\xow-win-cycle'); [void]`$e.Set(); Write-Host 'Reset requested. The controller should reconnect within about 15 seconds.' } catch { Write-Host 'xow-win is not running. Start it with Xbox-Wireless-Driver.cmd.' }"
+timeout /t 5 >nul
+"@ | Set-Content -Path (Join-Path $InstallDir 'Reset-Xbox-Adapter.cmd') -Encoding ASCII
+
+@"
+@echo off
 REM Opens the controller settings (button remapping, deadzones, vibration).
 REM Saved changes apply within a second while the driver runs.
 if not exist "$InstallDir\xow-win.ini" echo The settings file appears after the controller connects for the first time. & pause & exit /b
@@ -159,7 +168,7 @@ start "" notepad.exe "$InstallDir\xow-win.ini"
 "@ | Set-Content -Path (Join-Path $InstallDir 'Xbox-Controller-Settings.cmd') -Encoding ASCII
 
 # Desktop shortcuts for start (visible) / stop / settings
-foreach ($f in 'Xbox-Wireless-Driver.cmd', 'Stop-Xbox-Wireless-Driver.cmd', 'Xbox-Controller-Settings.cmd') {
+foreach ($f in 'Xbox-Wireless-Driver.cmd', 'Stop-Xbox-Wireless-Driver.cmd', 'Xbox-Controller-Settings.cmd', 'Reset-Xbox-Adapter.cmd') {
     Copy-Item (Join-Path $InstallDir $f) (Join-Path $DesktopDir $f) -Force -ErrorAction SilentlyContinue
 }
 

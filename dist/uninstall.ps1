@@ -18,7 +18,7 @@ L "Driver stopped"
 Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 L "Login task removed"
 Remove-Item (Join-Path $StartupDir 'xow-win.vbs') -Force -ErrorAction SilentlyContinue
-foreach ($f in 'Xbox-Wireless-Driver.cmd', 'Stop-Xbox-Wireless-Driver.cmd', 'Xbox-Controller-Settings.cmd') { Remove-Item (Join-Path $DesktopDir $f) -Force -ErrorAction SilentlyContinue }
+foreach ($f in 'Xbox-Wireless-Driver.cmd', 'Stop-Xbox-Wireless-Driver.cmd', 'Xbox-Controller-Settings.cmd', 'Reset-Xbox-Adapter.cmd') { Remove-Item (Join-Path $DesktopDir $f) -Force -ErrorAction SilentlyContinue }
 Remove-Item $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
 L "Login entry, shortcuts and files removed"
 

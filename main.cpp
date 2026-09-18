@@ -66,10 +66,15 @@ struct XowPowerSubscribeParameters
 typedef DWORD (WINAPI *XowPowerRegisterFn)(DWORD flags, HANDLE recipient, PVOID *handle);
 typedef DWORD (WINAPI *XowPowerUnregisterFn)(PVOID handle);
 
-// Names shared with the stop script and the single-instance guards
+// Names shared with the stop/reset scripts and the single-instance guards
 #define INSTANCE_MUTEX_NAME "Local\\xow-win-instance"
 #define WORKER_MUTEX_NAME "Local\\xow-win-worker"
 #define STOP_EVENT_NAME "Local\\xow-win-stop"
+#define CYCLE_EVENT_NAME "Local\\xow-win-cycle"
+
+// Set when the dongle should be USB-cycled at the next opportunity:
+// by Reset-Xbox-Adapter.cmd (named event) or by the link-flap detector
+static std::atomic<bool> cycleRequested(false);
 
 // Set by Ctrl+C / window close / stop script
 static std::atomic<bool> stopRequested(false);
@@ -181,6 +186,22 @@ static void stopEventThread(HANDLE stopEvent)
     }
 }
 
+// Waits for the named reset event (set by Reset-Xbox-Adapter.cmd); auto-reset
+// event so each press is one request
+static void cycleEventThread(HANDLE cycleEvent)
+{
+    while (WaitForSingleObject(cycleEvent, INFINITE) == WAIT_OBJECT_0)
+    {
+        Log::info("Adapter reset requested by Reset-Xbox-Adapter.cmd");
+        cycleRequested = true;
+
+        if (activeWatch)
+        {
+            activeWatch->lostDongle();
+        }
+    }
+}
+
 // Crash reporting: make sure the reason lands in the log before we die
 static void onTerminate()
 {
@@ -247,6 +268,13 @@ static int runWorker(bool background)
         std::thread(stopEventThread, stopEvent).detach();
     }
 
+    HANDLE cycleEvent = CreateEventA(nullptr, FALSE, FALSE, CYCLE_EVENT_NAME);
+
+    if (cycleEvent)
+    {
+        std::thread(cycleEventThread, cycleEvent).detach();
+    }
+
     bool elevated = Recover::isElevated();
 
     Log::info(
@@ -302,6 +330,33 @@ static int runWorker(bool background)
         UsbDeviceManager manager;
         int initFailures = 0;
         bool hintShown = false;
+
+        // Link-flap healing is rate limited so a genuinely broken controller
+        // can't keep the dongle cycling forever
+        int flapCycles = 0;
+        bool flapPending = false;
+        const char *cycleReason = "reset requested";
+        auto flapWindowStart = std::chrono::steady_clock::now();
+
+        // Performs the USB port cycle (or explains why not) and returns the
+        // delay (tenths of a second) to wait before reinitializing
+        auto cycleNow = [&](const char *reason) -> int {
+            cycleRequested = false;
+
+            if (!elevated)
+            {
+                Log::error("Self-healing: %s, but the adapter can't be reset without admin rights. Unplug and replug it.", reason);
+
+                return 30;
+            }
+
+            std::string detail;
+            bool ok = Recover::cycleAdapterPort(detail);
+
+            Log::info("Self-healing: %s: USB port cycle %s: %s", reason, ok ? "requested" : "failed", detail.c_str());
+
+            return ok ? 80 : 30;
+        };
 
         // The adapter can't be opened: after a few tries, if it is bound to
         // the wrong driver (e.g. Windows Update restored Microsoft's), rebind
@@ -372,6 +427,29 @@ static int runWorker(bool background)
                 initFailures = 0;
                 hintShown = false;
 
+                dongle.setLinkFlapHandler([&] {
+                    auto now = std::chrono::steady_clock::now();
+
+                    if (now - flapWindowStart > std::chrono::minutes(10))
+                    {
+                        flapWindowStart = now;
+                        flapCycles = 0;
+                    }
+
+                    if (flapCycles >= 3)
+                    {
+                        Log::error("Controller keeps dropping right after connecting; adapter already reset 3 times, not resetting again for a while");
+
+                        return;
+                    }
+
+                    flapCycles++;
+                    Log::error("Controller dropped seconds after connecting: the radio looks unhealthy, resetting the adapter");
+                    flapPending = true;
+                    cycleRequested = true;
+                    watch.lostDongle();
+                });
+
                 if (!watch.wait())
                 {
                     // Stop requested: dongle destructor powers controllers off
@@ -382,6 +460,14 @@ static int runWorker(bool background)
                 {
                     // Destructor below closes the dongle before the bus goes down
                     retryDelay = 0;
+                }
+
+                else if (cycleRequested)
+                {
+                    // Cycle after the destructor has closed the dongle
+                    retryDelay = -1;
+                    cycleReason = flapPending ? "link flap" : "reset requested";
+                    flapPending = false;
                 }
 
                 else
@@ -425,6 +511,13 @@ static int runWorker(bool background)
 
             activeWatch = nullptr;
 
+            // The dongle is closed now: safe to cycle its port
+            if (retryDelay < 0 || cycleRequested)
+            {
+                retryDelay = cycleNow(cycleReason);
+                cycleReason = "reset requested";
+            }
+
             sleepInterruptible(retryDelay);
         }
     }
@@ -448,6 +541,11 @@ static int runWorker(bool background)
     if (stopEvent)
     {
         CloseHandle(stopEvent);
+    }
+
+    if (cycleEvent)
+    {
+        CloseHandle(cycleEvent);
     }
 
     if (workerMutex)

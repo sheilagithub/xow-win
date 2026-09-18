@@ -508,6 +508,14 @@ protected:
     Mt76(std::unique_ptr<UsbDevice> usbDevice);
     virtual ~Mt76();
 
+public:
+    // True if the dongle still ran firmware from a previous session when we
+    // opened it (warm reboot / restart) and had to be reset rather than
+    // cold-loaded
+    bool firmwareWasRunning = false;
+
+protected:
+
     /* WLAN client operations */
     uint8_t associateClient(Bytes address);
     bool removeClient(uint8_t wcid);

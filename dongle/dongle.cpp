@@ -80,8 +80,9 @@ void Dongle::handleControllerConnect(Bytes address)
     );
 
     controllers[wcid - 1].reset(new Controller(sendPacket));
+    connectTimes[wcid - 1] = std::chrono::steady_clock::now();
 
-    Log::info("Controller '%d' connected", wcid);
+    Log::info("Controller '%d' connected (%s)", wcid, Log::formatBytes(address).c_str());
 }
 
 void Dongle::handleControllerDisconnect(uint8_t wcid)
@@ -102,6 +103,10 @@ void Dongle::handleControllerDisconnect(uint8_t wcid)
 
     controllers[wcid - 1].reset();
 
+    auto connectedFor = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - connectTimes[wcid - 1]
+    ).count();
+
     if (!removeClient(wcid))
     {
         Log::error("Failed to remove controller");
@@ -109,7 +114,14 @@ void Dongle::handleControllerDisconnect(uint8_t wcid)
         return;
     }
 
-    Log::info("Controller '%d' disconnected", wcid);
+    Log::info("Controller '%d' disconnected after %lld s", wcid, static_cast<long long>(connectedFor));
+
+    // A controller that gives up within seconds of joining did not get our
+    // replies: the radio is probably in a bad state
+    if (connectedFor < 15 && linkFlap)
+    {
+        linkFlap();
+    }
 }
 
 void Dongle::handleControllerPair(Bytes address, const Bytes &packet)
@@ -231,6 +243,7 @@ void Dongle::handleWlanPacket(const Bytes &packet)
             // They associate, disassociate and associate again during pairing
             // Disassociations happen without triggering EVT_CLIENT_LOST
             case MT_WLAN_DISASSOCIATION:
+                Log::info("Controller %s sent disassociation", Log::formatBytes(source).c_str());
                 handleControllerDisconnect(rxWi->wcid);
                 break;
 
@@ -293,6 +306,7 @@ void Dongle::handleBulkData(const Bytes &data)
 
             case EVT_CLIENT_LOST:
                 // Packet is guaranteed not to be empty
+                Log::info("Dongle reports client %d lost", packet[0]);
                 handleControllerDisconnect(packet[0]);
                 break;
         }
